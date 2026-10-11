@@ -39,6 +39,84 @@
 .leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 12px 30px -10px rgba(10, 20, 51, .35); }
 .leaflet-popup-content { margin: 12px 14px; }
 
+.marina-hero {
+  min-height: 680px;
+  background: #17384a;
+}
+.marina-scene {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.marina-hero-shade {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(5, 20, 37, .57) 0%, rgba(7, 28, 43, .34) 51%, rgba(6, 25, 38, .17) 100%),
+    linear-gradient(0deg, rgba(8, 30, 40, .28), transparent 48%, rgba(9, 24, 42, .1));
+}
+.marina-copy {
+  text-shadow: 0 2px 24px rgba(4, 17, 29, .22);
+}
+.marina-map-card {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .65);
+  border-radius: 1.35rem;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 28px 80px -28px rgba(4, 17, 29, .65), 0 2px 14px rgba(5, 22, 37, .18);
+  backdrop-filter: blur(14px);
+}
+.marina-cloud-back { animation: marina-drift 58s ease-in-out infinite alternate; }
+.marina-cloud-front { animation: marina-drift 42s ease-in-out infinite alternate-reverse; }
+.marina-wave-far { animation: marina-swell-far 13s ease-in-out infinite alternate; transform-origin: center; }
+.marina-wave-near { animation: marina-swell-near 9s ease-in-out infinite alternate; transform-origin: center; }
+.marina-wave-shore { animation: marina-shore-wash 7s ease-in-out infinite alternate; transform-origin: center; }
+.marina-reflection { animation: marina-glimmer 5s ease-in-out infinite alternate; transform-origin: 1040px 450px; }
+.marina-ripples { animation: marina-ripple-drift 11s ease-in-out infinite alternate; }
+.marina-gulls { animation: marina-birds 6s ease-in-out infinite alternate; }
+
+@keyframes marina-drift {
+  from { transform: translateX(-28px); }
+  to { transform: translateX(34px); }
+}
+@keyframes marina-swell-far {
+  from { transform: translate(-16px, 3px) scaleY(.97); }
+  to { transform: translate(20px, -3px) scaleY(1.04); }
+}
+@keyframes marina-swell-near {
+  from { transform: translate(12px, 5px) scaleY(.96); }
+  to { transform: translate(-20px, -4px) scaleY(1.04); }
+}
+@keyframes marina-shore-wash {
+  from { transform: translate(-8px, 4px); }
+  to { transform: translate(13px, -6px); }
+}
+@keyframes marina-glimmer {
+  from { opacity: .14; transform: scaleX(.88); }
+  to { opacity: .32; transform: scaleX(1.08); }
+}
+@keyframes marina-ripple-drift {
+  from { opacity: .16; transform: translateX(-9px); }
+  to { opacity: .3; transform: translateX(12px); }
+}
+@keyframes marina-birds {
+  from { transform: translate(0, 0); }
+  to { transform: translate(10px, -5px); }
+}
+
+@media (max-width: 640px) {
+  .marina-hero { min-height: 0; }
+  .marina-scene { object-position: 56% center; }
+  .marina-hero-shade {
+    background:
+      linear-gradient(90deg, rgba(5, 20, 37, .38), rgba(7, 28, 43, .18)),
+      linear-gradient(0deg, rgba(8, 30, 40, .32), rgba(9, 24, 42, .08) 80%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

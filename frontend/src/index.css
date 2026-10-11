@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { font-family: theme('fontFamily.sans'); }
+  h1, h2, h3, h4 { font-family: theme('fontFamily.display'); letter-spacing: -0.02em; }
+  :focus-visible { outline: 2px solid theme('colors.electric.500'); outline-offset: 2px; }
+}
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60; }
+  .btn-primary { @apply btn bg-electric-500 text-white shadow-glow hover:bg-electric-600 active:translate-y-px; }
+  .btn-teal { @apply btn bg-teal-400 text-navy-950 hover:bg-teal-300; }
+  .btn-secondary { @apply btn border border-slate-200 bg-white text-navy-800 hover:border-electric-300 hover:text-electric-700; }
+  .btn-ghost { @apply btn text-navy-700 hover:bg-navy-50; }
+  .btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700; }
+  .card { @apply rounded-2xl border border-slate-200/80 bg-white shadow-lift; }
+  .input { @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-navy-900 placeholder:text-slate-400 transition focus:border-electric-400 focus:outline-none focus:ring-4 focus:ring-electric-100; }
+  .input-error { @apply border-rose-400 focus:border-rose-400 focus:ring-rose-100; }
+  .label { @apply mb-1.5 block text-sm font-semibold text-navy-800; }
+  .field-error { @apply mt-1 text-xs font-medium text-rose-600; }
+  .page-title { @apply font-display text-2xl font-bold text-navy-900 sm:text-3xl; }
+  .skeleton { @apply relative overflow-hidden rounded-lg bg-slate-200/70; }
+  .skeleton::after { content: ''; @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/60 to-transparent; }
+}
+
+/* Leaflet custom markers */
+.cc-pin {
+  width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: #2f6bff; border: 3px solid #fff; box-shadow: 0 6px 14px rgba(10, 20, 51, .35);
+}
+.cc-pin::after {
+  content: ''; position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: #2dd4bf; top: 7px; left: 7px;
+}
+.leaflet-container { font-family: theme('fontFamily.sans'); z-index: 0; }
+.leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 12px 30px -10px rgba(10, 20, 51, .35); }
+.leaflet-popup-content { margin: 12px 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "CivicConnect",
+  "short_name": "CivicConnect",
+  "description": "Report local civic issues, track repairs and see how your city responds.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a1433",
+  "theme_color": "#0a1433",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

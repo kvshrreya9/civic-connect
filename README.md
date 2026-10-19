@@ -27,6 +27,7 @@ See `docs/municipal-operations.md` and `docs/risk-and-alerts.md`.
 
 - Citizen registration and JWT login with role-based access (citizen, employee, admin)
 - Complaint reporting with category, severity, safety flag, people affected, photos, map pin and auto-suggested address
+- Thozhan voice assistance: citizens can describe an issue, answer severity and impact prompts, choose GPS or a spoken landmark, review the filled report, and confirm submission. Signed-in municipal staff can ask for jurisdiction-scoped report summaries, busiest wards/areas, common issue categories, and overdue/high-risk counts; answers can be spoken aloud and follow-up voice questions are supported. Staff and citizen assistant modes are bound to the signed-in role and keep separate in-memory conversations. Microphone and location are requested through the browser's permission prompts; neither is enabled silently.
 - Transparent 0-100 priority score (severity, safety, affected citizens, nearby related reports, time unresolved) with a per-factor breakdown
 - Duplicate detection by distance, category, text similarity and perceptual image hash - warns, never discards
 - Leaflet + OpenStreetMap maps everywhere (no API keys)

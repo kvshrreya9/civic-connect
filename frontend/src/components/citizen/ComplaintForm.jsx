@@ -52,6 +52,7 @@ export default function ComplaintForm() {
   const severeRisk = form.severity === 'high' || form.severity === 'critical'
   const draftLoaded = useRef(false)
   const requestIdRef = useRef(null)
+  const formRef = useRef(null)
 
   const update = useCallback((changes) => {
     setForm((prev) => ({ ...prev, ...changes }))
@@ -63,11 +64,35 @@ export default function ComplaintForm() {
     })
   }, [])
 
+  useEffect(() => {
+    const applyVoiceDraft = (event) => {
+      if (event.detail) update(event.detail)
+    }
+    const voiceDraft = window.__THOZHAN_REPORT_DRAFT__
+    if (voiceDraft) update(voiceDraft)
+    const createVoiceReport = (draft) => {
+      update(draft)
+      window.setTimeout(() => formRef.current?.requestSubmit(), 0)
+    }
+    window.addEventListener('thozhan:report-draft', applyVoiceDraft)
+    window.__THOZHAN_CREATE_REPORT__ = createVoiceReport
+    return () => {
+      window.removeEventListener('thozhan:report-draft', applyVoiceDraft)
+      if (window.__THOZHAN_CREATE_REPORT__ === createVoiceReport) {
+        delete window.__THOZHAN_CREATE_REPORT__
+      }
+    }
+  }, [update])
+
+  const notifyVoiceReport = (detail) => {
+    window.dispatchEvent(new CustomEvent('thozhan:report-result', { detail }))
+  }
+
   // Restore a saved draft (including compressed photos) from IndexedDB.
   useEffect(() => {
     loadDraft()
       .then((draft) => {
-        if (draft?.form) {
+        if (draft?.form && !window.__THOZHAN_REPORT_DRAFT__) {
           setForm({ ...EMPTY, ...draft.form })
           setImages((draft.images || []).map((img) => ({ ...img, preview: URL.createObjectURL(img.blob) })))
           requestIdRef.current = draft.requestId || null
@@ -228,6 +253,7 @@ export default function ComplaintForm() {
     setSubmitError(null)
     if (hasErrors(validation)) {
       document.querySelector('[data-error="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      notifyVoiceReport({ ok: false, message: 'Please check the highlighted report fields and try again.' })
       return
     }
     // One id per report attempt: reused across retries so the server never creates duplicates.
@@ -238,12 +264,18 @@ export default function ComplaintForm() {
 
     if (!online) {
       await queueForLater(requestId, 'offline')
+      notifyVoiceReport({ ok: true, queued: true })
       return
     }
 
     try {
       const result = await createComplaint(payload(), images, requestId, (e) => {
         if (e.total) setProgress(Math.round((e.loaded / e.total) * 100))
+      })
+      notifyVoiceReport({
+        ok: true,
+        reference: result.complaint.reference,
+        id: result.complaint.id,
       })
       await clearDraft()
       requestIdRef.current = null
@@ -253,10 +285,12 @@ export default function ComplaintForm() {
     } catch (error) {
       if (isRetryableError(error)) {
         await queueForLater(requestId, 'network')
+        notifyVoiceReport({ ok: true, queued: true })
         return
       }
       setErrors((prev) => ({ ...prev, ...getFieldErrors(error) }))
       setSubmitError(getErrorMessage(error))
+      notifyVoiceReport({ ok: false, message: getErrorMessage(error) })
       setSubmitting(false)
     }
   }
@@ -273,7 +307,7 @@ export default function ComplaintForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <form ref={formRef} onSubmit={handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-6">
         {!online && (
           <div className="flex items-start gap-3 rounded-2xl bg-navy-900 p-4 text-white">

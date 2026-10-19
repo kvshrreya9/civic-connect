@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import useAuth from '../hooks/useAuth.js'
 import { loginPathFor } from '../utils/statusUtils.js'
 import Navbar from '../components/common/Navbar.jsx'
@@ -23,6 +23,7 @@ import OfflineQueuePage from '../pages/OfflineQueuePage.jsx'
 import VerifyResolutionPage from '../pages/VerifyResolutionPage.jsx'
 import Unauthorized from '../pages/Unauthorized.jsx'
 import NotFound from '../pages/NotFound.jsx'
+import { reverseGeocode, searchPlaces } from '../services/locationService.js'
 
 function ProtectedRoute({ roles, children }) {
   const { user, loading } = useAuth()
@@ -54,11 +55,27 @@ function PublicShell() {
 
 function ThozhanRouteSync() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user } = useAuth()
 
   useEffect(() => {
     window.__THOZHAN_ROUTE__ = location.pathname
-    window.dispatchEvent(new CustomEvent('thozhan:route', { detail: { path: location.pathname } }))
-  }, [location.pathname])
+    window.__THOZHAN_OPEN_REPORT__ = () => {
+      if (user?.role !== 'citizen') return false
+      navigate('/citizen/report')
+      return true
+    }
+    window.__THOZHAN_SEARCH_PLACE__ = searchPlaces
+    window.__THOZHAN_REVERSE_GEOCODE__ = reverseGeocode
+    window.dispatchEvent(new CustomEvent('thozhan:route', {
+      detail: { path: location.pathname, role: user?.role || null, userId: user?.id || null },
+    }))
+    return () => {
+      delete window.__THOZHAN_OPEN_REPORT__
+      delete window.__THOZHAN_SEARCH_PLACE__
+      delete window.__THOZHAN_REVERSE_GEOCODE__
+    }
+  }, [location.pathname, navigate, user?.id, user?.role])
 
   return null
 }

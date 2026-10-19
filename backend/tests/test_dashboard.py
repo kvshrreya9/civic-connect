@@ -20,14 +20,24 @@ def test_municipal_summary_is_jurisdiction_scoped(app, client):
     officer, _ = create_staff(app, client)
     beta, _ = create_staff(app, client, office_code="BETA")
     new_complaint(client, severity="critical")
+    new_complaint(client, category="garbage", title="Garbage pile by the market", severity="low",
+                  safety_risk="false", affected_count="2")
     new_complaint(client, latitude=str(BETA_CENTER[0]), longitude=str(BETA_CENTER[1]), severity="low",
                   safety_risk="false", affected_count="1")
     alpha_summary = client.get("/api/municipal/summary", headers=auth(officer)).get_json()
-    assert alpha_summary["total"] == 1 and alpha_summary["critical"] == 1 and alpha_summary["new"] == 1
-    assert alpha_summary["unassigned"] == 1 and alpha_summary["assigned_to_staff"] == 0
+    assert alpha_summary["total"] == 2 and alpha_summary["critical"] == 1 and alpha_summary["new"] == 2
+    assert alpha_summary["unassigned"] == 2 and alpha_summary["assigned_to_staff"] == 0
     assert alpha_summary["active_field_workers"] == 0 and alpha_summary["alerts_unacknowledged"] == 1
+    assert {item["category"]: item["total"] for item in alpha_summary["by_category"]} == {
+        "pothole": 1, "garbage": 1,
+    }
+    assert alpha_summary["hotspots"][0]["area"] == "Alpha Ward 1"
+    assert alpha_summary["hotspots"][0]["total"] == 2
+    assert alpha_summary["hotspots"][0]["open"] == 2
     beta_summary = client.get("/api/municipal/summary", headers=auth(beta)).get_json()
     assert beta_summary["total"] == 1 and beta_summary["critical"] == 0
+    assert beta_summary["hotspots"][0]["area"] == "Beta Ward"
+    assert beta_summary["hotspots"][0]["total"] == 1
 
 
 def test_municipal_summary_counts_assigned_open_work_and_active_workers(app, client):

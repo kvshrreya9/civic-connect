@@ -47,10 +47,22 @@
 
   // State
   let currentLang = 'ta'; // 'ta', 'en', 'tanglish', 'hi'
-  let currentRole = 'citizen'; // 'citizen' or 'staff'
+  let currentRole = window.__THOZHAN_USER_ROLE__ && window.__THOZHAN_USER_ROLE__ !== 'citizen' ? 'staff' : 'citizen';
   let voiceEnabled = true;
   let currentPath = window.__THOZHAN_ROUTE__ || window.location.pathname;
   let reportContext = window.__THOZHAN_REPORT_CONTEXT__ || null;
+  let reportWizard = null;
+  let restartReportListening = null;
+  let restartStaffListening = null;
+  let staffVoiceSession = false;
+
+  function isAuthenticatedStaff() {
+    return ['officer', 'employee', 'field_worker', 'admin'].includes(window.__THOZHAN_USER_ROLE__);
+  }
+
+  function getConversationKey(role = currentRole, userId = window.__THOZHAN_USER_ID__) {
+    return `${role}:${userId || 'guest'}`;
+  }
 
   // ==========================================
   // 3. INJECT CSS STYLES (Self-Contained)
@@ -212,6 +224,10 @@
     .thozhan-pill-btn.active {
       background: #f59e0b;
       color: #072146;
+    }
+    .thozhan-pill-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
     }
     .thozhan-lang-select {
       background: rgba(255,255,255,0.15);
@@ -399,7 +415,7 @@
   // 4. SPEECH SYNTHESIS & RECOGNITION (Voice Engine)
   // ==========================================
   function speakTamilOrEnglish(text) {
-    if (!voiceEnabled || !('speechSynthesis' in window)) return;
+    if (!voiceEnabled || !('speechSynthesis' in window)) return false;
     try {
       window.speechSynthesis.cancel(); // Stop any pending speech
       
@@ -423,13 +439,21 @@
 
       utterance.rate = 1.0;
       utterance.pitch = 1.05;
+      const resumeListening = () => {
+        if (reportWizard?.voiceSession) restartReportListening?.();
+        if (staffVoiceSession) restartStaffListening?.();
+      };
+      utterance.onend = resumeListening;
+      utterance.onerror = resumeListening;
       window.speechSynthesis.speak(utterance);
+      return true;
     } catch (e) {
       console.warn("Speech synthesis error:", e);
+      return false;
     }
   }
 
-  function setupSpeechRecognition(onResult, onStatus) {
+  function setupSpeechRecognition(onResult, onStatus, onError) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return null;
 
@@ -439,7 +463,10 @@
 
     recognition.onstart = () => onStatus(true);
     recognition.onend = () => onStatus(false);
-    recognition.onerror = () => onStatus(false);
+    recognition.onerror = (event) => {
+      onStatus(false);
+      onError?.(event);
+    };
 
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
@@ -459,7 +486,7 @@
     if (currentRole === 'staff') {
       return {
         ta: "வணக்கம் அதிகாரி அவர்களே! 👔 நான் தோழன்.\nநிலுவை புகார்கள், தீர்க்கப்பட்ட வழக்குகள் மற்றும் மாதாந்திர அறிக்கைகளைப் பற்றி கேளுங்கள்.",
-        en: "Vanakkam Officer! 👔 I am **Thozhan Staff Copilot**.\nAsk me to view current pending complaints, solved cases, monthly reports, or SLA breach warnings.",
+        en: "Vanakkam Officer! 👔 I am **Thozhan Staff Copilot**.\nAsk for a report summary, busiest areas, top issue categories, pending or overdue counts. Tap the microphone to talk and hear the answer.",
         tanglish: "Vanakkam Officer! 👔 Naan unga **Thozhan Staff Copilot**.\nPending complaints, solved cases, monthly reports pathi enkitta kelunga.",
         hi: "नमस्ते अधिकारी महोदय! 👔 मैं **Thozhan Staff Copilot** हूँ।\nलंबित शिकायतें, हल हुए मामले और मासिक रिपोर्ट पूछें।"
       }[currentLang];
@@ -533,7 +560,7 @@
 
         <!-- Input Bar with Mic & Send -->
         <div class="thozhan-footer">
-          <button class="thozhan-mic-btn" id="thozhan-mic" title="Speak in Tamil/English (குரல் பதிவு)">🎙️</button>
+            <button class="thozhan-mic-btn" id="thozhan-mic" title="Speak in Tamil/English (குரல் பதிவு)" aria-label="Start voice input" aria-pressed="false">🎙️</button>
           <input type="text" class="thozhan-input" id="thozhan-input" placeholder="கேளுங்கள் / Type your question or Ticket ID...">
           <button class="thozhan-send-btn" id="thozhan-send" title="Send">➤</button>
         </div>
@@ -554,16 +581,123 @@
     const roleCitizen = document.getElementById('thozhan-role-citizen');
     const roleStaff = document.getElementById('thozhan-role-staff');
     const chipsBar = document.getElementById('thozhan-chips');
+    const conversations = new Map();
+    let activeConversationKey = getConversationKey();
+
+    function renderStoredMessage(message) {
+      const element = document.createElement('div');
+      element.className = `thozhan-msg ${message.sender}`;
+      element.dataset.messageText = message.text || '';
+      element.dataset.messageHtml = message.customHtml || '';
+      if (message.customHtml) element.innerHTML = message.customHtml;
+      else element.innerHTML = escapeHtml(message.text || '').replace(/\n/g, '<br/>');
+      body.appendChild(element);
+    }
+
+    function saveConversation() {
+      conversations.set(activeConversationKey, Array.from(body.children).map((element) => ({
+        sender: element.classList.contains('user') ? 'user' : 'bot',
+        text: element.dataset.messageText || '',
+        customHtml: element.dataset.messageHtml || '',
+      })));
+    }
+
+    function switchConversation(nextKey) {
+      if (nextKey === activeConversationKey) return false;
+      saveConversation();
+      activeConversationKey = nextKey;
+      body.replaceChildren();
+      (conversations.get(activeConversationKey) || []).forEach(renderStoredMessage);
+      body.scrollTop = body.scrollHeight;
+      return true;
+    }
+
+    function syncRoleControls() {
+      const staffMode = isAuthenticatedStaff();
+      roleStaff.disabled = !staffMode;
+      roleCitizen.disabled = staffMode;
+      roleStaff.setAttribute('aria-pressed', String(staffMode));
+      roleCitizen.setAttribute('aria-pressed', String(!staffMode));
+      roleStaff.title = staffMode ? 'Staff assistant' : 'Sign in with a staff account to access staff insights';
+      roleCitizen.title = staffMode ? 'Citizen assistant is only available to citizen accounts' : 'Citizen assistant';
+    }
+
+    syncRoleControls();
+
+    body.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-thozhan-action]');
+      if (!button || !reportWizard) return;
+      if (button.dataset.thozhanAction === 'submit') {
+        submitVoiceReport();
+      } else if (button.dataset.thozhanAction === 'edit') {
+        reportWizard.step = 'issue';
+        reportPrompt('Tell me the corrected issue details.');
+      } else if (button.dataset.thozhanAction === 'cancel') {
+        cancelReportWizard();
+        addMessage('Okay, I cancelled the voice report. Nothing was submitted.', 'bot', null, true);
+      }
+    });
 
     window.addEventListener('thozhan:route', (event) => {
       currentPath = event.detail?.path || window.location.pathname;
+      const nextUserRole = event.detail?.role || null;
+      const nextUserId = event.detail?.userId || null;
+      const nextRole = ['officer', 'employee', 'field_worker', 'admin'].includes(nextUserRole) ? 'staff' : 'citizen';
+      const identityChanged = nextUserRole !== window.__THOZHAN_USER_ROLE__ || nextUserId !== window.__THOZHAN_USER_ID__;
+      if (identityChanged && reportWizard) cancelReportWizard();
+      if (identityChanged && isRecording) recognition?.stop();
+      if (identityChanged) {
+        staffVoiceSession = false;
+        window.speechSynthesis?.cancel();
+      }
+      window.__THOZHAN_USER_ROLE__ = nextUserRole;
+      window.__THOZHAN_USER_ID__ = nextUserId;
+      currentRole = nextRole;
+      const nextConversationKey = getConversationKey(currentRole, nextUserId);
+      const hadConversation = conversations.has(nextConversationKey);
+      switchConversation(nextConversationKey);
+      if (!isAuthenticatedStaff()) staffVoiceSession = false;
+      roleStaff.classList.toggle('active', currentRole === 'staff');
+      roleCitizen.classList.toggle('active', currentRole === 'citizen');
+      syncRoleControls();
       container.hidden = /^\/(?:login|signup|municipality\/login)\/?$/.test(currentPath);
       if (container.hidden) panel.classList.remove('active');
       updateChips();
+      if (identityChanged && !hadConversation) addMessage(getWelcomeMessage(), 'bot');
     });
     window.addEventListener('thozhan:context', (event) => {
       reportContext = event.detail || null;
       updateChips();
+    });
+    window.addEventListener('thozhan:report-result', (event) => {
+      if (!reportWizard || reportWizard.step !== 'submitting') return;
+      const result = event.detail || {};
+      if (result.ok && result.queued) {
+        reportWizard = null;
+        addMessage(
+          "Your report is saved on this device and will be sent when the connection returns. You can check it in your offline queue.",
+          'bot',
+          null,
+          true
+        );
+      } else if (result.ok) {
+        reportWizard = null;
+        addMessage(
+          `Your report was submitted successfully${result.reference ? `, reference ${result.reference}` : ''}. You can track its progress in My Complaints.`,
+          'bot',
+          null,
+          true
+        );
+      } else {
+        reportWizard.step = 'review';
+        reportWizard.voiceSession = false;
+        addMessage(
+          `${result.message || 'I could not submit the report.'} Your report details are still in the form; please correct them and submit again.`,
+          'bot',
+          null,
+          true
+        );
+      }
     });
 
     // Speech recognition setup
@@ -574,19 +708,59 @@
       recognition = setupSpeechRecognition(
         (transcript) => {
           input.value = transcript;
-          handleSend(transcript);
+          handleSend(transcript, true);
         },
         (recording) => {
           isRecording = recording;
           if (recording) {
             micBtn.classList.add('recording');
             micBtn.innerHTML = '🔴';
+            micBtn.setAttribute('aria-label', 'Stop voice input');
+            micBtn.setAttribute('aria-pressed', 'true');
           } else {
             micBtn.classList.remove('recording');
             micBtn.innerHTML = '🎙️';
+            micBtn.setAttribute('aria-label', 'Start voice input');
+            micBtn.setAttribute('aria-pressed', 'false');
           }
+        },
+        (error) => {
+          if (reportWizard) reportWizard.voiceSession = false;
+          staffVoiceSession = false;
+          const message = error.error === 'not-allowed' || error.error === 'service-not-allowed'
+            ? 'Microphone access was blocked. Allow microphone access for this site in your browser settings, then tap the microphone to try again.'
+            : error.error === 'no-speech'
+              ? 'I did not hear anything. Tap the microphone and speak again, or type your answer.'
+              : 'Voice input stopped. Check your microphone permission, then try again or type your answer.';
+          addMessage(message, 'bot');
         }
       );
+      restartReportListening = () => {
+        window.setTimeout(() => {
+          if (!reportWizard?.voiceSession || !panel.classList.contains('active') || isRecording) return;
+          recognition.lang = currentLang === 'ta' ? 'ta-IN' : (currentLang === 'hi' ? 'hi-IN' : 'en-IN');
+          try {
+            recognition.start();
+          } catch (error) {
+            console.warn('[Thozhan] Could not restart voice input:', error);
+            reportWizard.voiceSession = false;
+            addMessage('I could not continue listening automatically. Tap the microphone for your next answer, or type it instead.', 'bot');
+          }
+        }, 450);
+      };
+      restartStaffListening = () => {
+        window.setTimeout(() => {
+          if (!staffVoiceSession || currentRole !== 'staff' || !panel.classList.contains('active') || isRecording) return;
+          recognition.lang = currentLang === 'ta' ? 'ta-IN' : (currentLang === 'hi' ? 'hi-IN' : 'en-IN');
+          try {
+            recognition.start();
+          } catch (error) {
+            console.warn('[Thozhan] Could not continue staff voice input:', error);
+            staffVoiceSession = false;
+            addMessage('I could not continue listening automatically. Tap the microphone for another question, or type it instead.', 'bot');
+          }
+        }, 450);
+      };
     } else {
       micBtn.title = "Microphone not supported on this browser";
       micBtn.style.opacity = '0.5';
@@ -598,11 +772,20 @@
         return;
       }
       if (isRecording) {
+        if (reportWizard) reportWizard.voiceSession = false;
+        staffVoiceSession = false;
         recognition.stop();
       } else {
         // Set recognition language
         recognition.lang = currentLang === 'ta' ? 'ta-IN' : (currentLang === 'hi' ? 'hi-IN' : 'en-IN');
-        recognition.start();
+        if (reportWizard) reportWizard.voiceSession = true;
+        staffVoiceSession = currentRole === 'staff' && isAuthenticatedStaff();
+        try {
+          recognition.start();
+        } catch (error) {
+          console.warn('[Thozhan] Could not start voice input:', error);
+          addMessage('I could not start voice input. Check your microphone permission or type your message instead.', 'bot');
+        }
       }
     };
 
@@ -619,8 +802,15 @@
     trigger.onclick = () => {
       panel.classList.toggle('active');
       if (panel.classList.contains('active')) input.focus();
+      else if (reportWizard) reportWizard.voiceSession = false;
+      if (!panel.classList.contains('active')) staffVoiceSession = false;
     };
-    closeBtn.onclick = () => panel.classList.remove('active');
+    closeBtn.onclick = () => {
+      panel.classList.remove('active');
+      if (reportWizard) reportWizard.voiceSession = false;
+      staffVoiceSession = false;
+      if (isRecording) recognition?.stop();
+    };
 
     // Language Change
     langSelect.onchange = (e) => {
@@ -631,6 +821,10 @@
 
     // Role Toggles
     roleCitizen.onclick = () => {
+      if (isAuthenticatedStaff()) {
+        addMessage('This staff account can only use the staff assistant.', 'bot');
+        return;
+      }
       currentRole = 'citizen';
       roleCitizen.classList.add('active');
       roleStaff.classList.remove('active');
@@ -639,6 +833,10 @@
     };
 
     roleStaff.onclick = () => {
+      if (!isAuthenticatedStaff()) {
+        addMessage('Staff report insights are available after signing in with a municipal staff account.', 'bot');
+        return;
+      }
       currentRole = 'staff';
       roleStaff.classList.add('active');
       roleCitizen.classList.remove('active');
@@ -652,14 +850,19 @@
 
       if (currentRole === 'staff') {
         chips = [
+          { label: "📊 Report summary", text: "Give me a report summary" },
+          { label: "📍 Busiest areas", text: "Which areas have the most reports?" },
+          { label: "🧰 Top issue types", text: "What are the most common issue categories?" },
+          { label: "⚠️ Overdue & risk", text: "How many reports are overdue or high risk?" },
           { label: "📋 Pending cases", text: "Show pending cases" },
-          { label: "✅ Solved cases", text: "Show solved cases" },
-          { label: "📊 Past month report", text: "Show report for the past month" },
-          { label: "⏱️ SLA Breaches", text: "Check SLA status" }
+          { label: "✅ Solved cases", text: "Show solved cases" }
         ];
       } else {
         if (currentPath === '/citizen/report') {
-          chips = [{ label: '📝 Explain my report', text: 'Explain my current report details' }];
+          chips = [
+            { label: '🎙️ Talk & file a report', text: 'I want to report an issue' },
+            { label: '📝 Explain my report', text: 'Explain my current report details' },
+          ];
         }
         if (currentLang === 'ta') {
           chips = currentPath === '/citizen/report' ? chips : [
@@ -726,16 +929,11 @@
     }
 
     function addMessage(text, sender = 'bot', customHtml = null, playAudio = false) {
-      const msg = document.createElement('div');
-      msg.className = `thozhan-msg ${sender}`;
-
-      if (customHtml) {
-        msg.innerHTML = customHtml;
-      } else {
-        msg.innerHTML = (text || '').replace(/\n/g, '<br/>');
-      }
-
-      body.appendChild(msg);
+      const message = { text: text || '', sender, customHtml: customHtml || '' };
+      const history = conversations.get(activeConversationKey) || [];
+      history.push(message);
+      conversations.set(activeConversationKey, history);
+      renderStoredMessage(message);
       body.scrollTop = body.scrollHeight;
 
       if (sender === 'bot' && (playAudio || voiceEnabled) && text) {
@@ -766,18 +964,83 @@
       `;
     }
 
+    function getApiHeaders() {
+      const token = window.localStorage.getItem('civicconnect_token');
+      return {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+    }
+
+    async function answerStaffInsights(question) {
+      if (!isAuthenticatedStaff()) {
+        addMessage('Sign in with a municipal staff account to access jurisdiction-scoped report insights.', 'bot', null, true);
+        return;
+      }
+
+      const conversationKey = activeConversationKey;
+      try {
+        const response = await fetch('/api/municipal/summary', {
+          headers: getApiHeaders(),
+        });
+        if (!response.ok) throw new Error(`Request failed (${response.status})`);
+        const summary = await response.json();
+        if (conversationKey !== activeConversationKey || !isAuthenticatedStaff()) return;
+        const lower = question.toLowerCase();
+        const areaQuestion = /area|ward|hot ?spot|where|location|பகுதி|வார்டு|எந்த இட|அதிக புகார்/i.test(lower);
+        const categoryQuestion = /categor|issue|problem|common|வகை|பிரச்சினை/i.test(lower);
+        const overdueQuestion = /overdue|late|sla|காலதாமதம்|காலக்கெடு/i.test(lower);
+        const pendingQuestion = /pending|open|நிலுவை|திறந்த/i.test(lower);
+        const scope = summary.scope?.all_offices
+          ? 'all offices'
+          : [summary.scope?.office?.name, summary.scope?.ward?.name].filter(Boolean).join(' · ') || 'your assigned jurisdiction';
+        let answer;
+
+        if (areaQuestion) {
+          const hotspots = summary.hotspots || [];
+          answer = hotspots.length
+            ? `Highest-report areas in ${scope}: ${hotspots.slice(0, 3).map((area, index) => `${index + 1}. ${area.area}: ${area.total} reports, ${area.open} open; most common issue: ${reportCategoryLabel(area.top_category)}`).join('. ')}.`
+            : `There are no report hotspots to show for ${scope} yet.`;
+        } else if (categoryQuestion) {
+          const categories = summary.by_category || [];
+          answer = categories.length
+            ? `Most reported issue types in ${scope}: ${categories.slice(0, 3).map((item) => `${reportCategoryLabel(item.category)}: ${item.total}`).join(', ')}.`
+            : `There are no reports to summarize for ${scope} yet.`;
+        } else if (overdueQuestion) {
+          answer = `${scope} has ${summary.overdue} overdue reports, ${summary.high_risk} high-risk reports, and ${summary.critical} critical reports.`;
+        } else if (pendingQuestion) {
+          answer = `${scope} has ${summary.open} open reports: ${summary.new} new, ${summary.unassigned} unassigned, and ${summary.in_progress} in progress. ${summary.resolved} are resolved.`;
+        } else {
+          const busiest = summary.hotspots?.[0];
+          const commonCategory = summary.by_category?.[0];
+          answer = `${scope} has received ${summary.total} reports. ${summary.open} are open, ${summary.resolved} are resolved, and ${summary.overdue} are overdue. There are ${summary.high_risk} high-risk and ${summary.critical} critical reports.`;
+          if (busiest) answer += ` Busiest area: ${busiest.area}, with ${busiest.total} reports.`;
+          if (commonCategory) answer += ` Most common issue: ${reportCategoryLabel(commonCategory.category)}, with ${commonCategory.total}.`;
+        }
+        addMessage(answer, 'bot', null, true);
+      } catch (error) {
+        console.error('[Thozhan] Could not load staff report insights:', error);
+        addMessage('I could not load your staff report insights right now. Please try again in a moment.', 'bot', null, true);
+      }
+    }
+
     async function showComplaintResults({ status, dateFrom, dateTo, query, title, emptyMessage }) {
-      const params = new URLSearchParams({ limit: '2000' });
+      const conversationKey = activeConversationKey;
+      const params = new URLSearchParams(currentRole === 'staff' ? { per_page: '100' } : { limit: '2000' });
       if (status) params.set('status', status);
       if (dateFrom) params.set('date_from', dateFrom);
       if (dateTo) params.set('date_to', dateTo);
       if (query) params.set('q', query);
       addMessage('Checking the latest reports…', 'bot');
       try {
-        const response = await fetch(`/api/complaints/map?${params.toString()}`, { headers: { Accept: 'application/json' } });
+        const endpoint = currentRole === 'staff' ? '/api/municipal/complaints' : '/api/complaints/map';
+        const response = await fetch(`${endpoint}?${params.toString()}`, {
+          headers: getApiHeaders(),
+        });
         if (!response.ok) throw new Error(`Request failed (${response.status})`);
         const data = await response.json();
-        const reports = Array.isArray(data.points) ? data.points : [];
+        if (conversationKey !== activeConversationKey) return;
+        const reports = Array.isArray(data.items) ? data.items : Array.isArray(data.points) ? data.points : [];
         if (!reports.length) {
           addMessage(emptyMessage, 'bot');
           return;
@@ -785,23 +1048,336 @@
         const safeTitle = String(title).replace(/[&<>"']/g, (character) => ({
           '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
         })[character]);
-        const html = `<strong>${safeTitle} (${reports.length})</strong><div style="margin-top:6px;">${reports.map(renderReportCard).join('')}</div>`;
-        addMessage(`${title}. ${reports.length} cases found.`, 'bot', html, true);
+        const total = Number.isFinite(data.total) ? data.total : reports.length;
+        const html = `<strong>${safeTitle} (${total})</strong><div style="margin-top:6px;">${reports.map(renderReportCard).join('')}</div>`;
+        addMessage(`${title}. ${total} cases found.`, 'bot', html, true);
       } catch (error) {
         console.error('[Thozhan] Could not load complaint results:', error);
         addMessage('I could not load the latest reports. Please try again in a moment.', 'bot');
       }
     }
 
-    function handleSend(userText) {
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      })[character]);
+    }
+
+    function dispatchReportDraft(draft) {
+      window.__THOZHAN_REPORT_DRAFT__ = draft ? { ...draft } : null;
+      window.dispatchEvent(new CustomEvent('thozhan:report-draft', { detail: window.__THOZHAN_REPORT_DRAFT__ }));
+    }
+
+    function reportCategory(text) {
+      const value = text.toLowerCase();
+      if (/pothole|road hole|road damage|crack|kuzhi|kuli|குழி|பள்ளம்/.test(value)) return 'pothole';
+      if (/garbage|trash|waste|dump|kuppai|குப்பை|கழிவு/.test(value)) return 'garbage';
+      if (/water leak|pipe leak|burst pipe|leaking pipe|குழாய்.*கசிவு|தண்ணீர்.*கசிவு/.test(value)) return 'water_leakage';
+      if (/drain|sewage|manhole|waterlog|water log|flood|blocked.*(drain|water)|சாக்கடை|மழைநீர்|மேன்ஹோல்/.test(value)) return 'drainage';
+      if (/street ?light|street ?lamp|lamp post|light.*(not working|broken|off)|மின்விளக்கு|தெருவிளக்கு/.test(value)) return 'streetlight';
+      if (/live wire|exposed wire|electric wire|electric shock|spark|திறந்த.*கம்பி|மின்சாரம்/.test(value)) return 'streetlight';
+      if (/fallen tree|tree branch|dangerous tree|leaning tree|மரம் விழுந்த|மரக்கிளை/.test(value)) return 'tree_hazard';
+      if (/road|footpath|sidewalk|pavement|சாலை|சாலையில்/.test(value)) return 'road_damage';
+      return 'other';
+    }
+
+    function reportCategoryLabel(value) {
+      const labels = {
+        pothole: 'Pothole',
+        road_damage: 'Damaged road',
+        garbage: 'Garbage',
+        water_leakage: 'Water leakage',
+        drainage: 'Drainage',
+        streetlight: 'Streetlight or electrical hazard',
+        tree_hazard: 'Tree hazard',
+        other: 'Other civic issue',
+      };
+      return labels[value] || labels.other;
+    }
+
+    function reportPrompt(text) {
+      addMessage(text, 'bot', null, true);
+      if (reportWizard?.voiceSession && recognition && !isRecording && !window.speechSynthesis?.speaking) {
+        restartReportListening?.();
+      }
+    }
+
+    function startReportWizard(issueText = '', voiceSession = false) {
+      if (window.__THOZHAN_USER_ROLE__ !== 'citizen') {
+        addMessage('Please sign in to your citizen account first. Then ask me to report an issue and I can guide you through the form.', 'bot', null, true);
+        return;
+      }
+      reportWizard = {
+        step: 'issue',
+        voiceSession,
+        draft: {
+          title: '',
+          description: '',
+          category: '',
+          severity: 'medium',
+          safety_risk: false,
+          affected_count: 0,
+          latitude: null,
+          longitude: null,
+          address: '',
+        },
+      };
+      dispatchReportDraft(reportWizard.draft);
+      if (currentPath !== '/citizen/report') {
+        if (!window.__THOZHAN_OPEN_REPORT__?.()) {
+          reportWizard = null;
+          window.__THOZHAN_REPORT_DRAFT__ = null;
+          addMessage('I could not open the citizen report form. Please sign in and try again.', 'bot', null, true);
+          return;
+        }
+      }
+      if (issueText) {
+        collectReportIssue(issueText);
+      } else {
+        reportWizard.step = 'issue';
+        reportPrompt(currentLang === 'ta'
+          ? 'நிச்சயமாக. என்ன பிரச்சினை என்பதைச் சொல்லுங்கள். உதாரணம்: தெருவில் பெரிய பள்ளம் உள்ளது.'
+          : 'Sure, I can help file it. What problem did you notice? For example, describe where the pothole or garbage is.');
+      }
+    }
+
+    function collectReportIssue(text) {
+      if (!reportWizard) return;
+      const draft = reportWizard.draft;
+      const issue = text.trim();
+      if (issue.length < 5) {
+        reportPrompt('Please describe the problem in a few words so I can prepare the report.');
+        return;
+      }
+      draft.category = reportCategory(issue);
+      draft.description = issue;
+      draft.title = `${reportCategoryLabel(draft.category)} reported by resident`;
+      draft.safety_risk = /danger|dangerous|urgent|emergency|injur|accident|live wire|shock|open manhole|விபத்து|ஆபத்து|அவசரம்/i.test(issue);
+      if (draft.safety_risk) draft.severity = 'high';
+      dispatchReportDraft(draft);
+      reportWizard.step = 'severity';
+      reportPrompt(currentLang === 'ta'
+        ? 'இந்தப் பிரச்சினையின் தீவிரம் எப்படி? குறைவு, நடுத்தரம், அதிகம் அல்லது உடனடி ஆபத்து என்று சொல்லுங்கள்.'
+        : 'How severe is it: low, medium, high, or critical right now?');
+    }
+
+    function reviewReport() {
+      if (!reportWizard) return;
+      const draft = reportWizard.draft;
+      const reviewCard = `
+        <div class="thozhan-report-card">
+          <div class="thozhan-report-header"><strong>Review your report</strong><span class="thozhan-status-pill status-pending">Not submitted</span></div>
+          <div><strong>Issue:</strong> ${escapeHtml(reportCategoryLabel(draft.category))}</div>
+          <div><strong>Details:</strong> ${escapeHtml(draft.description)}</div>
+          <div><strong>Severity:</strong> ${escapeHtml(draft.severity)}</div>
+          <div><strong>Location:</strong> ${escapeHtml(draft.address || 'GPS pin set')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+            <button type="button" data-thozhan-action="submit" style="background:#0f766e;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Submit this report</button>
+            <button type="button" data-thozhan-action="edit" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Keep editing</button>
+            <button type="button" data-thozhan-action="cancel" style="background:#fff;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Cancel</button>
+          </div>
+        </div>`;
+      reportWizard.step = 'review';
+      dispatchReportDraft(draft);
+      addMessage('Please check these details. I will only submit after you confirm.', 'bot', reviewCard, true);
+    }
+
+    function cancelReportWizard() {
+      reportWizard = null;
+      window.__THOZHAN_REPORT_DRAFT__ = null;
+      window.speechSynthesis?.cancel();
+      if (isRecording) recognition?.stop();
+      dispatchReportDraft({
+        title: '', description: '', category: '', severity: 'medium', safety_risk: false,
+        affected_count: 0, latitude: null, longitude: null, address: '',
+      });
+      window.__THOZHAN_REPORT_DRAFT__ = null;
+    }
+
+    function askReportLocation() {
+      if (!reportWizard) return;
+      reportWizard.step = 'location';
+      reportPrompt(currentLang === 'ta'
+        ? 'புகார் இடத்தைச் சேர்ப்போம். சாதனத்தின் GPS இடத்தைப் பயன்படுத்தலாமா? ஆம் என்று சொல்லுங்கள்; அனுமதி கேட்கப்படும். அல்லது தெரு/அடையாள இடத்தைச் சொல்லுங்கள்.'
+        : 'Where is the issue? Say “use my location” to request GPS permission, or tell me a street or landmark.');
+    }
+
+    function requestReportGps() {
+      if (!navigator.geolocation) {
+        reportPrompt('This browser does not provide GPS location. Please tell me a nearby street or landmark instead.');
+        return;
+      }
+      reportWizard.step = 'locating';
+      reportPrompt('Please allow location access in the browser prompt so I can pin where the issue is.');
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        if (!reportWizard || reportWizard.step !== 'locating') return;
+        const draft = reportWizard.draft;
+        draft.latitude = Number(position.coords.latitude.toFixed(6));
+        draft.longitude = Number(position.coords.longitude.toFixed(6));
+        draft.address = `GPS location (${draft.latitude.toFixed(5)}, ${draft.longitude.toFixed(5)})`;
+        if (window.__THOZHAN_REVERSE_GEOCODE__) {
+          try {
+            const place = await window.__THOZHAN_REVERSE_GEOCODE__(draft.latitude, draft.longitude);
+            if (place?.address) draft.address = place.address;
+          } catch (error) {
+            console.warn('[Thozhan] Could not look up the GPS address:', error);
+          }
+        }
+        dispatchReportDraft(draft);
+        reviewReport();
+      }, (error) => {
+        if (!reportWizard || reportWizard.step !== 'locating') return;
+        console.warn('[Thozhan] GPS permission/location request failed:', error);
+        reportWizard.step = 'location';
+        reportPrompt('I could not get your GPS location. You can allow location access in browser settings, or say a nearby street or landmark instead.');
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+    }
+
+    async function searchReportLandmark(text) {
+      const draft = reportWizard?.draft;
+      if (!draft || !window.__THOZHAN_SEARCH_PLACE__) {
+        reportPrompt('I cannot look up that landmark right now. Please try GPS or enter a nearby landmark on the report form.');
+        return;
+      }
+      reportWizard.step = 'searching';
+      reportPrompt('I am looking up that street or landmark on the map.');
+      try {
+        const results = await window.__THOZHAN_SEARCH_PLACE__(text);
+        if (!reportWizard || reportWizard.step !== 'searching') return;
+        if (!results?.length) {
+          reportWizard.step = 'location';
+          reportPrompt('I could not find that place. Please try a nearby well-known landmark, or say “use my location”.');
+          return;
+        }
+        reportWizard.pendingPlaces = results.slice(0, 3);
+        reportWizard.step = 'place_confirmation';
+        const placeList = results.slice(0, 3).map((place, index) => `${index + 1}. ${place.display_name}`).join('\n');
+        reportPrompt(`I found these possible places:\n${placeList}\nSay 1, 2, or 3 to choose one, or tell me another landmark.`);
+      } catch (error) {
+        console.error('[Thozhan] Landmark lookup failed:', error);
+        if (reportWizard) reportWizard.step = 'location';
+        reportPrompt('I could not look up that place. Please try GPS or a different landmark.');
+      }
+    }
+
+    function acceptReportPlace(index) {
+      const place = reportWizard?.pendingPlaces?.[index];
+      if (!place) return false;
+      reportWizard.draft.latitude = Number(Number(place.latitude).toFixed(6));
+      reportWizard.draft.longitude = Number(Number(place.longitude).toFixed(6));
+      reportWizard.draft.address = place.display_name.split(',').slice(0, 3).join(', ');
+      dispatchReportDraft(reportWizard.draft);
+      reviewReport();
+      return true;
+    }
+
+    function handleReportWizardReply(text) {
+      if (!reportWizard) return false;
+      const reply = text.trim();
+      const lower = reply.toLowerCase();
+      const yes = /^(yes|yeah|yep|ok|okay|sure|ஆமாம்|ஆம்|சரி|ஆமா|ஆம் பயன்படுத்துங்கள்|உபயோகிக்கலாம்)\b/i.test(lower);
+      const no = /^(no|nope|வேண்டாம்|இல்லை|இல்ல|முடியாது)\b/i.test(lower);
+
+      if (/^(cancel|stop|வேண்டாம் ரத்து|ரத்து செய்|cancel report)$/i.test(lower)) {
+        cancelReportWizard();
+        addMessage('Okay, I cancelled the voice report. Nothing was submitted.', 'bot', null, true);
+        return true;
+      }
+
+      switch (reportWizard.step) {
+        case 'issue':
+          collectReportIssue(reply);
+          return true;
+        case 'severity': {
+          if (/critical|emergency|danger|உடனடி ஆபத்து|மிகவும் ஆபத்து/i.test(lower)) {
+            reportWizard.draft.severity = 'critical';
+            reportWizard.draft.safety_risk = true;
+          } else if (/high|severe|அதிகம்|கடுமை/i.test(lower)) {
+            reportWizard.draft.severity = 'high';
+          } else if (/low|minor|குறைவு/i.test(lower)) {
+            reportWizard.draft.severity = 'low';
+          } else if (/medium|moderate|normal|நடுத்தரம்/i.test(lower)) {
+            reportWizard.draft.severity = 'medium';
+          } else {
+            reportPrompt('Please say low, medium, high, or critical.');
+            return true;
+          }
+          dispatchReportDraft(reportWizard.draft);
+          reportPrompt('About how many people are affected? You can say a number, or say “not sure”.');
+          reportWizard.step = 'affected';
+          return true;
+        }
+        case 'affected': {
+          const count = Number(reply.match(/\d+/)?.[0]);
+          reportWizard.draft.affected_count = Number.isFinite(count) ? Math.min(100000, Math.max(0, Math.floor(count))) : 0;
+          dispatchReportDraft(reportWizard.draft);
+          askReportLocation();
+          return true;
+        }
+        case 'location':
+          if (/\b(use my location|my gps|gps|current location|என் இடம்|இருப்பிடத்தை பயன்படுத்து)\b/i.test(lower) || yes) {
+            requestReportGps();
+          } else if (no) {
+            reportPrompt('No problem. Tell me a street or landmark near the issue.');
+          } else {
+            searchReportLandmark(reply);
+          }
+          return true;
+        case 'place_confirmation': {
+          const match = lower.match(/\b([1-3])\b/);
+          if (match && acceptReportPlace(Number(match[1]) - 1)) return true;
+          searchReportLandmark(reply);
+          return true;
+        }
+        case 'review':
+          if (/^(yes|submit|confirm|சமர்ப்பி|ஆம்|சரி)\b/i.test(lower)) submitVoiceReport();
+          else if (/^(edit|change|திருத்து)\b/i.test(lower)) {
+            reportWizard.step = 'issue';
+            reportPrompt('Tell me the corrected issue details.');
+          } else {
+            reportPrompt('Say “submit” to send this report, “edit” to change it, or “cancel” to discard it.');
+          }
+          return true;
+        case 'submitting':
+          reportPrompt('Your report is being submitted. Please wait for the confirmation.');
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    function submitVoiceReport() {
+      if (!reportWizard || reportWizard.step !== 'review') return;
+      if (!window.__THOZHAN_CREATE_REPORT__) {
+        reportPrompt('The report form is not ready yet. Please try again in a moment.');
+        return;
+      }
+      reportWizard.step = 'submitting';
+      window.__THOZHAN_CREATE_REPORT__({ ...reportWizard.draft });
+    }
+
+    function handleSend(userText, voiceInput = false) {
+      const conversationKey = activeConversationKey;
       const txt = (userText || input.value || '').trim();
       if (!txt) return;
 
       addMessage(txt, 'user');
       input.value = '';
 
+      if (reportWizard && handleReportWizardReply(txt)) return;
+
+      const reportRequest = /\b(?:i want|help me|please|start|create)\b.{0,35}\b(?:report|file|raise|submit|complaint|issue)\b|\b(?:report|file|submit|raise|register)\s+(?:an?\s+)?(?:issue|complaint|problem)\b|\b(?:can|could)\s+i\s+(?:please\s+)?(?:report|file)\b|^report$/i.test(txt)
+        || /புகார்.*(?:பதிவு|சமர்ப்ப|செய்ய)|(?:பதிவு|சமர்ப்ப).*(?:புகார்|பிரச்சினை)/i.test(txt);
+      const civicIssue = /\b(?:pothole|garbage|drain|sewage|street ?light|road|water|leak|tree|manhole|trash|waste|fallen|broken|overflow|dumping|wire)\b|குழி|பள்ளம்|குப்பை|சாக்கடை|தெருவிளக்கு|சாலை|தண்ணீர்|கசிவு|மரம் விழுந்த/i.test(txt);
+      const isQuestion = /\b(?:how long|what is|when will|how do|where can|status of)\b/i.test(txt);
+      if (currentRole === 'citizen' && (reportRequest && (currentPath === '/citizen/report' || civicIssue) || civicIssue && !isQuestion)) {
+        startReportWizard(txt, voiceInput);
+        return;
+      }
+
       // Processing AI response
       setTimeout(async () => {
+        if (conversationKey !== activeConversationKey) return;
         const lower = txt.toLowerCase();
 
         if (currentPath === '/citizen/report' &&
@@ -817,6 +1393,15 @@
             title: `Report matching ${ticketMatch[0]}`,
             emptyMessage: `I could not find a report matching ${ticketMatch[0]}. Check the ticket number and try again.`,
           });
+          return;
+        }
+
+        const staffInsightQuestion = currentRole === 'staff' && (
+          /summary|overview|total|count|how many|highest|most reported|hot ?spot|area|ward|category|categories|top issue|risk|overdue|பகுதி|வார்டு|அதிக புகார்|எத்தனை|மொத்த|சுருக்கம்|அதிகம்/i.test(lower)
+          || (/report|complaint|புகார்/i.test(lower) && !/past month|last month|கடந்த மாத/i.test(lower))
+        );
+        if (staffInsightQuestion) {
+          await answerStaffInsights(txt);
           return;
         }
 
@@ -1010,7 +1595,6 @@
       close: () => panel.classList.remove('active'),
       setRole: (role) => {
         if (role === 'staff' || role === 'citizen') {
-          currentRole = role;
           if (role === 'staff') roleStaff.click(); else roleCitizen.click();
         }
       },

@@ -155,6 +155,36 @@ def municipal_summary(user):
     now = utcnow()
     open_items = [c for c in complaints if c.status in OPEN_STATUSES]
     resolved = [c for c in complaints if c.status in RESOLVED_STATUSES and c.resolved_at]
+    category_counts = Counter(c.category for c in complaints if c.status != "rejected")
+    area_counts = defaultdict(lambda: {"area": "", "total": 0, "open": 0, "categories": Counter()})
+    for complaint in complaints:
+        if complaint.status == "rejected":
+            continue
+        address_area = (complaint.address or "").split(",", 1)[0].strip()
+        if complaint.ward:
+            area_key = ("ward", complaint.ward_id)
+            area_name = complaint.ward.name
+        elif address_area:
+            area_key = ("address", address_area.casefold())
+            area_name = address_area
+        else:
+            area_key = ("coordinates", round(complaint.latitude, 2), round(complaint.longitude, 2))
+            area_name = "Nearby reported area"
+        area = area_counts[area_key]
+        area["area"] = area_name
+        area["total"] += 1
+        area["open"] += complaint.status in OPEN_STATUSES
+        area["categories"][complaint.category] += 1
+    hotspots = [
+        {
+            "area": values["area"],
+            "total": values["total"],
+            "open": values["open"],
+            "top_category": values["categories"].most_common(1)[0][0],
+        }
+        for values in area_counts.values()
+    ]
+    hotspots.sort(key=lambda item: (item["total"], item["open"]), reverse=True)
     hours = [_hours(c.created_at, c.resolved_at) for c in resolved]
     ids = [c.id for c in complaints]
     alerts_open = RiskAlert.query.filter(RiskAlert.complaint_id.in_(ids), RiskAlert.status == "open").count() if ids else 0
@@ -181,6 +211,11 @@ def municipal_summary(user):
         "awaiting_verification": sum(1 for c in complaints if c.status == "resolution_submitted"),
         "overdue": sum(1 for c in open_items if c.sla_due_at and c.sla_due_at < now),
         "avg_resolution_hours": _avg(hours),
+        "by_category": [
+            {"category": category, "total": total}
+            for category, total in category_counts.most_common()
+        ],
+        "hotspots": hotspots[:5],
         "open": len(open_items),
         "assigned_to_me": sum(1 for c in open_items if c.assigned_to_id == user.id),
         "resolved_this_week": sum(1 for c in resolved if c.resolved_at >= week_ago),

@@ -1,6 +1,4 @@
-import os
-
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, Response, jsonify, request
 
 from ..services import image_storage_service
 from ..utils.permissions import login_required
@@ -18,10 +16,10 @@ def serve_image(filename):
         raise ApiError("Image not found", 404)
     if not verify_image_token(filename, request.args.get("t")):
         raise ApiError("This image link is invalid or has expired", 403)
-    path = image_storage_service.resolve_path(filename)
-    if not path:
+    data = image_storage_service.read_bytes(filename)
+    if data is None:
         raise ApiError("Image not found", 404)
-    response = send_file(os.path.abspath(path), mimetype="image/jpeg", max_age=3600)
+    response = Response(data, mimetype="image/jpeg")
     response.headers["Content-Security-Policy"] = "default-src 'none'"
     response.headers["Cache-Control"] = "private, max-age=3600"
     return response

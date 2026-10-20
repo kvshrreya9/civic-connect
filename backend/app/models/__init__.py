@@ -7,6 +7,7 @@ from .complaint import (
 )
 from .complaint_status import ComplaintStatus
 from .complaint_image import ComplaintImage
+from .stored_image import StoredImage
 from .resolution_proof import ResolutionProof
 from .resolution_feedback import ResolutionFeedback
 from .department_assignment import DepartmentAssignment
@@ -17,7 +18,7 @@ from .audit_log import AuditLog
 
 __all__ = [
     "Department", "Office", "Ward", "User", "Complaint", "ComplaintSupport", "ComplaintStatus",
-    "ComplaintImage", "ResolutionProof", "ResolutionFeedback", "DepartmentAssignment",
+    "ComplaintImage", "StoredImage", "ResolutionProof", "ResolutionFeedback", "DepartmentAssignment",
     "DuplicateCandidate", "Notification", "RiskAlert", "AuditLog",
     "STATUSES", "OPEN_STATUSES", "RESOLVED_STATUSES", "RISK_LEVELS", "RISK_RANK",
     "ROLES", "STAFF_ROLES", "OFFICER_ROLES", "OFFICE_TYPES", "BOUNDARY_TYPES", "ALERT_KINDS",

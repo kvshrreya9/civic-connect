@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
-from ..models import ComplaintImage
+from ..models import ComplaintImage, StoredImage
 from ..utils.image_utils import compute_dhash, ensure_rgb, load_image
 from ..utils.security import is_safe_stored_filename
 from ..utils.validators import ApiError
@@ -21,6 +22,10 @@ class ProcessedImage:
     original_size: int
     faces_blurred: int
     phash: str
+
+
+def _use_database():
+    return current_app.config.get("IMAGE_STORAGE", "disk") == "database"
 
 
 def process_upload(file_storage):
@@ -49,13 +54,21 @@ def process_upload(file_storage):
 def save_processed(processed, complaint, kind, uploaded_by=None, proof=None):
     # Resolution evidence is stored separately from citizens' original photos.
     subfolder = "resolution" if kind == "resolution" else "report"
-    folder = os.path.join(current_app.config["UPLOAD_FOLDER"], subfolder)
-    os.makedirs(folder, exist_ok=True)
     filename = f"{subfolder}/{uuid.uuid4().hex}.jpg"
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], subfolder, filename.split("/", 1)[1])
+    buffer = io.BytesIO()
     processed.image.save(
-        path, "JPEG", quality=current_app.config["IMAGE_JPEG_QUALITY"], optimize=True, progressive=True
+        buffer, "JPEG", quality=current_app.config["IMAGE_JPEG_QUALITY"], optimize=True, progressive=True
     )
+    data = buffer.getvalue()
+    if _use_database():
+        # Saved in the same transaction as the complaint, so both exist or neither does.
+        db.session.add(StoredImage(filename=filename, data=data))
+    else:
+        folder = os.path.join(current_app.config["UPLOAD_FOLDER"], subfolder)
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, filename.split("/", 1)[1])
+        with open(path, "wb") as handle:
+            handle.write(data)
     record = ComplaintImage(
         complaint=complaint,
         proof=proof,
@@ -65,7 +78,7 @@ def save_processed(processed, complaint, kind, uploaded_by=None, proof=None):
         content_type="image/jpeg",
         width=processed.image.width,
         height=processed.image.height,
-        size_bytes=os.path.getsize(path),
+        size_bytes=len(data),
         phash=processed.phash,
         faces_blurred=processed.faces_blurred > 0,
         uploaded_by_id=uploaded_by.id if uploaded_by else None,
@@ -89,9 +102,28 @@ def resolve_path(filename):
     return path if os.path.isfile(path) else None
 
 
+def read_bytes(filename):
+    """Return the stored JPEG bytes (database first, then disk for older uploads), or None."""
+    if not is_safe_stored_filename(filename):
+        return None
+    row = db.session.get(StoredImage, filename)
+    if row is not None:
+        return bytes(row.data)
+    path = resolve_path(filename)
+    if path:
+        with open(path, "rb") as handle:
+            return handle.read()
+    return None
+
+
 def delete_file(filename):
+    removed = False
+    if is_safe_stored_filename(filename):
+        if StoredImage.query.filter_by(filename=filename).delete(synchronize_session=False):
+            db.session.commit()
+            removed = True
     path = resolve_path(filename)
     if path:
         os.remove(path)
-        return True
-    return False
+        removed = True
+    return removed

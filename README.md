@@ -106,47 +106,11 @@ Open `http://localhost:5173`. The Vite dev server proxies `/api` to the backend,
 
 Same steps; activate the environment with `source venv/bin/activate`.
 
-## Demo accounts
+## Staff accounts
 
-For a local preset setup, `flask seed-demo` creates all 15 Greater Chennai Corporation zone offices, their map boundaries, and officer/field-worker accounts. The default password comes from `DEMO_PASSWORD` in `backend/.env` (default `CivicDemo@2026`). Citizens are not pre-created; they must use the signup flow first.
+Staff accounts are never shown on the website. For a local setup, `flask seed-demo` creates the 15 Greater Chennai Corporation zone offices (with their map boundaries), one officer and one field worker per zone, and one administrator. Their password comes from `DEMO_PASSWORD` in `backend/.env` - set your own before seeding anything publicly reachable. On a hosted deployment, set `AUTO_SEED_STAFF=true` and a private `DEMO_PASSWORD` in the host's environment settings and the accounts are created once, on first start. Citizens are not pre-created; they must sign up at `/signup` and then log in at `/login`.
 
-| Role | Email | Login page |
-| --- | --- | --- |
-| Administrator | `admin@civicconnect.demo` | `/municipality/login` |
-| Zone 1 - Thiruvottiyur officer | `officer.thiruvottiyur@civicconnect.demo` | `/municipality/login` |
-| Zone 1 - Thiruvottiyur field worker | `worker.thiruvottiyur@civicconnect.demo` | `/municipality/login` |
-| Zone 2 - Manali officer | `officer.manali@civicconnect.demo` | `/municipality/login` |
-| Zone 2 - Manali field worker | `worker.manali@civicconnect.demo` | `/municipality/login` |
-| Zone 3 - Madhavaram officer | `officer.madhavaram@civicconnect.demo` | `/municipality/login` |
-| Zone 3 - Madhavaram field worker | `worker.madhavaram@civicconnect.demo` | `/municipality/login` |
-| Zone 4 - Tondiarpet officer | `officer.tondiarpet@civicconnect.demo` | `/municipality/login` |
-| Zone 4 - Tondiarpet field worker | `worker.tondiarpet@civicconnect.demo` | `/municipality/login` |
-| Zone 5 - Royapuram officer | `officer.royapuram@civicconnect.demo` | `/municipality/login` |
-| Zone 5 - Royapuram field worker | `worker.royapuram@civicconnect.demo` | `/municipality/login` |
-| Zone 6 - Thiru-Vi-Ka Nagar officer | `officer.thiruvikanagar@civicconnect.demo` | `/municipality/login` |
-| Zone 6 - Thiru-Vi-Ka Nagar field worker | `worker.thiruvikanagar@civicconnect.demo` | `/municipality/login` |
-| Zone 7 - Ambattur officer | `officer.ambattur@civicconnect.demo` | `/municipality/login` |
-| Zone 7 - Ambattur field worker | `worker.ambattur@civicconnect.demo` | `/municipality/login` |
-| Zone 8 - Anna Nagar officer | `officer.annanagar@civicconnect.demo` | `/municipality/login` |
-| Zone 8 - Anna Nagar field worker | `worker.annanagar@civicconnect.demo` | `/municipality/login` |
-| Zone 9 - Teynampet officer | `officer.teynampet@civicconnect.demo` | `/municipality/login` |
-| Zone 9 - Teynampet field worker | `worker.teynampet@civicconnect.demo` | `/municipality/login` |
-| Zone 10 - Kodambakkam officer | `officer.kodambakkam@civicconnect.demo` | `/municipality/login` |
-| Zone 10 - Kodambakkam field worker | `worker.kodambakkam@civicconnect.demo` | `/municipality/login` |
-| Zone 11 - Valasaravakkam officer | `officer.valasaravakkam@civicconnect.demo` | `/municipality/login` |
-| Zone 11 - Valasaravakkam field worker | `worker.valasaravakkam@civicconnect.demo` | `/municipality/login` |
-| Zone 12 - Alandur officer | `officer.alandur@civicconnect.demo` | `/municipality/login` |
-| Zone 12 - Alandur field worker | `worker.alandur@civicconnect.demo` | `/municipality/login` |
-| Zone 13 - Adyar officer | `officer.adyar@civicconnect.demo` | `/municipality/login` |
-| Zone 13 - Adyar field worker | `worker.adyar@civicconnect.demo` | `/municipality/login` |
-| Zone 14 - Perungudi officer | `officer.perungudi@civicconnect.demo` | `/municipality/login` |
-| Zone 14 - Perungudi field worker | `worker.perungudi@civicconnect.demo` | `/municipality/login` |
-| Zone 15 - Sholinganallur officer | `officer.sholinganallur@civicconnect.demo` | `/municipality/login` |
-| Zone 15 - Sholinganallur field worker | `worker.sholinganallur@civicconnect.demo` | `/municipality/login` |
-
-Citizen login is intentionally excluded from the default seeded data. Citizens must create their own account via `/signup` and then log in on `/login`.
-
-Reports are routed by their map-pin coordinates against the bundled Greater Chennai Corporation zone polygons. The boundary data is a simplified copy of the GCC zone layer published through [ArcGIS FeatureServer](https://services2.arcgis.com/I9cUOJUZvdGAJncI/arcgis/rest/services/Chennai_GCC_Boundary/FeatureServer/39), with `maxAllowableOffset=0.00005` and `geometryPrecision=6`. Reports outside those polygons remain in the administrator's unassigned queue. Change `DEMO_PASSWORD` before seeding anything publicly reachable.
+Reports are routed by their map-pin coordinates against the bundled Greater Chennai Corporation zone polygons. The boundary data is a simplified copy of the GCC zone layer published through [ArcGIS FeatureServer](https://services2.arcgis.com/I9cUOJUZvdGAJncI/arcgis/rest/services/Chennai_GCC_Boundary/FeatureServer/39), with `maxAllowableOffset=0.00005` and `geometryPrecision=6`. Reports outside those polygons remain in the administrator's unassigned queue.
 
 ## Running tests
 

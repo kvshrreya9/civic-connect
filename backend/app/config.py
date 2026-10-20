@@ -67,6 +67,9 @@ class Config:
     AUTO_SEED_STAFF = _bool("AUTO_SEED_STAFF", False)
 
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER") or os.path.join(BASE_DIR, "uploads")
+    # "disk" keeps photos in UPLOAD_FOLDER; "database" keeps them in PostgreSQL so they
+    # survive restarts on hosts with temporary disks (use this on Render's free plan).
+    IMAGE_STORAGE = os.getenv("IMAGE_STORAGE", "disk").strip().lower()
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "30")) * 1024 * 1024
     MAX_IMAGES_PER_COMPLAINT = 5
     MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -141,6 +144,7 @@ class TestingConfig(Config):
     GEOCODER_ENABLED = False
     ENABLE_FACE_BLUR = False
     UPLOAD_FOLDER = tempfile.mkdtemp(prefix="civicconnect-test-")
+    IMAGE_STORAGE = "disk"
     PERIODIC_SYNC_MINUTES = 0
     SMTP_HOST = ""
     SMS_WEBHOOK_URL = ""

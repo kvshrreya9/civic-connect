@@ -79,10 +79,11 @@ def _setup_staff_accounts(app):
     """
     if app.config.get("TESTING") or not app.config.get("AUTO_SEED_STAFF"):
         return
-    if not os.getenv("DEMO_PASSWORD"):
+    password = os.getenv("DEMO_PASSWORD", "")
+    if not password or password == "CivicDemo@2026":
         app.logger.warning(
-            "AUTO_SEED_STAFF is on but DEMO_PASSWORD is not set in the environment - "
-            "skipping staff account setup."
+            "AUTO_SEED_STAFF is on but DEMO_PASSWORD is missing or is the public default - "
+            "set a private DEMO_PASSWORD in the environment. Skipping staff account setup."
         )
         return
     with app.app_context():

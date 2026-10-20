@@ -25,11 +25,18 @@ def _float(name, default):
 
 
 def build_database_url():
-    """Use DATABASE_URL when present, otherwise compose one from DB_* variables."""
+    """Use DATABASE_URL when present, otherwise compose one from DB_* variables.
+
+    Plain postgres:// and postgresql:// addresses are switched to the psycopg2
+    driver, which is the one listed in requirements.txt. Newer SQLAlchemy versions
+    would otherwise look for a different driver ("psycopg") and crash at startup.
+    """
     url = os.getenv("DATABASE_URL", "").strip()
     if url:
         if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
+            url = "postgresql+psycopg2://" + url[len("postgres://"):]
+        elif url.startswith("postgresql://"):
+            url = "postgresql+psycopg2://" + url[len("postgresql://"):]
         return url
     name = os.getenv("DB_NAME", "civicconnect")
     host = os.getenv("DB_HOST", "localhost")
@@ -42,7 +49,7 @@ def build_database_url():
         if password:
             credentials += ":" + quote_plus(password)
         credentials += "@"
-    return f"postgresql://{credentials}{host}:{port}/{name}"
+    return f"postgresql+psycopg2://{credentials}{host}:{port}/{name}"
 
 
 class Config:
@@ -55,6 +62,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     AUTO_CREATE_TABLES = _bool("AUTO_CREATE_TABLES", True)
+    # When true (and DEMO_PASSWORD is set in the environment), the app creates the
+    # 15 GCC zone offices, officers, field workers and the admin once, on startup.
+    AUTO_SEED_STAFF = _bool("AUTO_SEED_STAFF", False)
 
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER") or os.path.join(BASE_DIR, "uploads")
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "30")) * 1024 * 1024
@@ -124,6 +134,7 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_ENGINE_OPTIONS = {}
     AUTO_CREATE_TABLES = False
+    AUTO_SEED_STAFF = False
     SECRET_KEY = "test-secret-key-for-automated-tests-only-0001"
     JWT_SECRET_KEY = "test-jwt-secret-key-for-automated-tests-0001"
     SECRETS_FROM_ENV = True

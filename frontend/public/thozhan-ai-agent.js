@@ -95,6 +95,38 @@
       box-shadow: 0 14px 28px -5px rgba(15, 61, 108, 0.6);
       border-color: #fbbf24;
     }
+    .thozhan-float-btn.thozhan-guest { padding: 8px; gap: 0; }
+    .thozhan-float-btn.thozhan-guest .thozhan-label,
+    .thozhan-float-btn.thozhan-guest .thozhan-pulse-dot { display: none; }
+    .thozhan-login-card {
+      position: fixed;
+      bottom: 84px;
+      right: 24px;
+      width: 270px;
+      max-width: calc(100vw - 32px);
+      background: #ffffff;
+      color: #0f172a;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.35);
+      padding: 16px;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+    }
+    .thozhan-login-card[hidden] { display: none !important; }
+    .thozhan-login-card p { margin: 0; font-weight: 600; }
+    .thozhan-login-card a {
+      display: block;
+      margin-top: 8px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: #0f3d6c;
+      color: #ffffff;
+      text-align: center;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .thozhan-login-card a.thozhan-alt { background: #f1f5f9; color: #0f3d6c; }
     .thozhan-avatar-icon {
       width: 34px;
       height: 34px;
@@ -511,9 +543,16 @@
       <!-- Floating Action Button -->
       <button class="thozhan-float-btn" id="thozhan-trigger" aria-label="Open Thozhan">
         <div class="thozhan-avatar-icon">${AVATAR_SVG}</div>
-        <span>தோழன் (Thozhan)</span>
+        <span class="thozhan-label">தோழன் (Thozhan)</span>
         <span class="thozhan-pulse-dot"></span>
       </button>
+
+      <!-- Shown instead of the chat when nobody is signed in -->
+      <div class="thozhan-login-card" id="thozhan-login-card" hidden>
+        <p>Please log in to use Thozhan.</p>
+        <a href="/login" data-thozhan-nav>Citizen login</a>
+        <a href="/municipality/login" class="thozhan-alt" data-thozhan-nav>Staff login</a>
+      </div>
 
       <!-- Chat Drawer Panel -->
       <div class="thozhan-chat-panel" id="thozhan-panel">
@@ -571,6 +610,7 @@
 
     const panel = document.getElementById('thozhan-panel');
     const trigger = document.getElementById('thozhan-trigger');
+    const loginCard = document.getElementById('thozhan-login-card');
     const closeBtn = document.getElementById('thozhan-close');
     const body = document.getElementById('thozhan-body');
     const input = document.getElementById('thozhan-input');
@@ -614,15 +654,35 @@
 
     function syncRoleControls() {
       const staffMode = isAuthenticatedStaff();
-      roleStaff.disabled = !staffMode;
-      roleCitizen.disabled = staffMode;
+      roleStaff.disabled = true;
+      roleCitizen.disabled = true;
+      roleStaff.hidden = !staffMode;
+      roleCitizen.hidden = staffMode;
       roleStaff.setAttribute('aria-pressed', String(staffMode));
       roleCitizen.setAttribute('aria-pressed', String(!staffMode));
-      roleStaff.title = staffMode ? 'Staff assistant' : 'Sign in with a staff account to access staff insights';
-      roleCitizen.title = staffMode ? 'Citizen assistant is only available to citizen accounts' : 'Citizen assistant';
+      roleStaff.title = 'Staff assistant';
+      roleCitizen.title = 'Citizen assistant';
+    }
+
+    function isSignedIn() {
+      return Boolean(window.__THOZHAN_USER_ROLE__);
+    }
+
+    // Before login only the small icon is visible; the chat opens only for a signed-in account.
+    function syncAccess() {
+      const signedIn = isSignedIn();
+      trigger.classList.toggle('thozhan-guest', !signedIn);
+      trigger.setAttribute('aria-label', signedIn ? 'Open Thozhan' : 'Log in to use Thozhan');
+      if (signedIn) {
+        loginCard.hidden = true;
+      } else {
+        panel.classList.remove('active');
+        staffVoiceSession = false;
+      }
     }
 
     syncRoleControls();
+    syncAccess();
 
     body.addEventListener('click', (event) => {
       const button = event.target.closest('[data-thozhan-action]');
@@ -660,8 +720,9 @@
       roleStaff.classList.toggle('active', currentRole === 'staff');
       roleCitizen.classList.toggle('active', currentRole === 'citizen');
       syncRoleControls();
+      syncAccess();
       container.hidden = /^\/(?:login|signup|municipality\/login)\/?$/.test(currentPath);
-      if (container.hidden) panel.classList.remove('active');
+      if (container.hidden) { panel.classList.remove('active'); loginCard.hidden = true; }
       updateChips();
       if (identityChanged && !hadConversation) addMessage(getWelcomeMessage(), 'bot');
     });
@@ -799,7 +860,20 @@
     };
 
     // Toggle Chat Panel
+    loginCard.addEventListener('click', (event) => {
+      const link = event.target.closest('a[data-thozhan-nav]');
+      if (!link) return;
+      event.preventDefault();
+      loginCard.hidden = true;
+      window.history.pushState({}, '', link.getAttribute('href'));
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
     trigger.onclick = () => {
+      if (!isSignedIn()) {
+        loginCard.hidden = !loginCard.hidden;
+        return;
+      }
       panel.classList.toggle('active');
       if (panel.classList.contains('active')) input.focus();
       else if (reportWizard) reportWizard.voiceSession = false;
@@ -1360,6 +1434,10 @@
       const conversationKey = activeConversationKey;
       const txt = (userText || input.value || '').trim();
       if (!txt) return;
+      if (!isSignedIn()) {
+        addMessage('Please log in to use Thozhan.', 'bot');
+        return;
+      }
 
       addMessage(txt, 'user');
       input.value = '';

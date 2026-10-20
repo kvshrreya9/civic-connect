@@ -5,7 +5,6 @@ import useAuth from '../hooks/useAuth.js'
 import { getErrorMessage } from '../services/api.js'
 import { validateLogin, hasErrors } from '../utils/validators.js'
 import { homePathFor } from '../utils/statusUtils.js'
-import { DEMO_ACCOUNTS } from '../data/dummyData.js'
 
 export default function LoginPage() {
   const { login, user } = useAuth()
@@ -42,19 +41,6 @@ export default function LoginPage() {
       <div className="hidden lg:block">
         <h1 className="font-display text-5xl font-extrabold leading-tight text-navy-900">Welcome back.</h1>
         <p className="mt-4 max-w-md text-lg text-slate-600">Check on your reports, confirm fixes, and see what is happening in your neighbourhood.</p>
-        <div className="mt-8 rounded-2xl bg-navy-900 p-5 text-sm text-navy-100">
-          <p className="font-semibold text-white">Demo accounts</p>
-          <p className="mt-1 text-navy-200">Available after running <code className="rounded bg-white/10 px-1">flask seed-demo</code>. Password is set by DEMO_PASSWORD in backend/.env. Staff accounts use the staff login.</p>
-          <ul className="mt-3 space-y-1.5">
-            {DEMO_ACCOUNTS.map((a) => (
-              <li key={a.email}>
-                <button type="button" onClick={() => setForm((f) => ({ ...f, email: a.email }))} className="text-left hover:text-teal-300">
-                  <span className="font-semibold text-white">{a.role}:</span> {a.email}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
       </div>
       <form onSubmit={submit} noValidate className="card mx-auto w-full max-w-md space-y-5 p-6 sm:p-8">
         <div>

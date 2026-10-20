@@ -53,11 +53,3 @@ export const PROBLEMS = [
   { title: 'Same pothole, fifty reports', text: 'Duplicates flood desks while the worst hazards wait in the same queue as minor ones.' },
   { title: 'Closed but not fixed', text: 'Tickets get marked done without anyone checking the street.' },
 ]
-
-export const DEMO_ACCOUNTS = [
-  { role: 'Citizen', email: 'asha@civicconnect.demo' },
-  { role: 'Central City Municipality officer', email: 'officer.ccm@civicconnect.demo' },
-  { role: 'North Gram Panchayat officer', email: 'officer.ngp@civicconnect.demo' },
-  { role: 'Field worker (staff login)', email: 'worker.ccm@civicconnect.demo' },
-  { role: 'Administrator (staff login)', email: 'admin@civicconnect.demo' },
-]

@@ -64,7 +64,38 @@ def create_app(config_class=None):
                 db.session.rollback()
                 app.logger.error("Database initialisation failed: %s", exc)
 
+    _setup_staff_accounts(app)
+
     return app
+
+
+def _setup_staff_accounts(app):
+    """One-time creation of the 15 zone offices and the staff accounts.
+
+    Runs at startup only when AUTO_SEED_STAFF=true, a DEMO_PASSWORD environment
+    variable is set, and no administrator exists yet. After the first successful
+    run it does nothing, so restarts and redeploys are fast and never touch
+    existing accounts or passwords.
+    """
+    if app.config.get("TESTING") or not app.config.get("AUTO_SEED_STAFF"):
+        return
+    if not os.getenv("DEMO_PASSWORD"):
+        app.logger.warning(
+            "AUTO_SEED_STAFF is on but DEMO_PASSWORD is not set in the environment - "
+            "skipping staff account setup."
+        )
+        return
+    with app.app_context():
+        try:
+            from .models import User
+            from .seed import seed_demo_data
+
+            if User.query.filter_by(role="admin").first() is None:
+                app.logger.info("Creating zone offices and staff accounts...")
+                app.logger.info(seed_demo_data())
+        except Exception as exc:  # e.g. another worker finished first
+            db.session.rollback()
+            app.logger.error("Staff account setup did not complete: %s", exc)
 
 
 def _register_error_handlers(app):
